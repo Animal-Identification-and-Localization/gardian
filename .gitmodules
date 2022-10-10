@@ -1,0 +1,6 @@
+[submodule "boardcomms"]
+	path = boardcomms
+	url = https://github.com/Animal-Identification-and-Localization/boardcomms.git
+[submodule "inference"]
+	path = inference
+	url = https://github.com/Animal-Identification-and-Localization/inference.git
