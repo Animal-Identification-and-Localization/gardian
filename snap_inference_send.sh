@@ -1,0 +1,2 @@
+python3 pycamera.py
+python3 inference_coral_cam_send.py
