@@ -66,7 +66,7 @@ def on_new_sample(sink, snapinfo):
   result, mapinfo = buf.map(Gst.MapFlags.READ)
   if result:
     imgfile = snapinfo.get_filename()
-    print('Saving image: ' + imgfile)
+    print('Saving ' + imgfile)
     caps = sample.get_caps()
     width = caps.get_structure(0).get_value('width')
     height = caps.get_structure(0).get_value('height')
@@ -78,10 +78,8 @@ def on_new_sample(sink, snapinfo):
 def run_pipeline(snapinfo):
   src_caps = SRC_CAPS.format(width=SRC_WIDTH, height=SRC_HEIGHT, rate=SRC_RATE)
   sink_caps = SINK_CAPS.format(width=SINK_WIDTH, height=SINK_HEIGHT)
-  if snapinfo.oneshot or not monitor_connected():
-    screen_sink = FAKE_SINK
-  else:
-    screen_sink = SCREEN_SINK
+  screen_sink = FAKE_SINK
+
   pipeline = PIPELINE.format(
       leaky_q=LEAKY_Q,
       src_element=SRC_ELEMENT,
@@ -89,6 +87,7 @@ def run_pipeline(snapinfo):
       sink_caps=sink_caps,
       sink_element=SINK_ELEMENT,
       screen_sink=screen_sink)
+
   pipeline = Gst.parse_launch(pipeline)
   appsink = pipeline.get_by_name('appsink')
   appsink.connect('new-sample', partial(on_new_sample, snapinfo=snapinfo))
@@ -97,7 +96,7 @@ def run_pipeline(snapinfo):
   bus = pipeline.get_bus()
   bus.add_signal_watch()
   bus.connect('message', on_bus_message, loop)
-  # Connect the loop to the snaphelper
+  # Connect the loop to the PyCamera
   snapinfo.connect_loop(loop)
   # Run pipeline.
   pipeline.set_state(Gst.State.PLAYING)
@@ -109,35 +108,22 @@ def run_pipeline(snapinfo):
   pipeline.set_state(Gst.State.NULL)
   while GLib.MainContext.default().iteration(False):
     pass
-@contextlib.contextmanager
-def setup_keyboard():
-  fd = sys.stdin.fileno()
-  termattr = termios.tcgetattr(fd)
-  orgattr = list(termattr)
-  termattr[3] = termattr[3] & ~(termios.ICANON | termios.ECHO)
-  termios.tcsetattr(fd, termios.TCSANOW, termattr)
-  orgflags = fcntl.fcntl(fd, fcntl.F_GETFL)
-  fcntl.fcntl(fd, fcntl.F_SETFL, orgflags | os.O_NONBLOCK)
-  try:
-    yield
-  finally:
-    termios.tcsetattr(fd, termios.TCSAFLUSH, orgattr)
-    fcntl.fcntl(fd, fcntl.F_SETFL, orgflags)
-class SnapHelper:
-  def __init__(self, sysfs, prefix='img', oneshot=True, suffix='jpg'):
+
+
+class PyCamera:
+  def __init__(self, sysfs, prefix='coral_camera_', suffix='jpg'):
     self.prefix = prefix
-    self.oneshot = oneshot
+    self.oneshot = True
     self.suffix = suffix
-    self.snap_it = oneshot
+    self.snap_it = True
     self.num = 0
     self.scrapframes = SCRAP_FRAMES
     self.sysfs = sysfs
     self.loop = None
     self.thread = None
-    if not oneshot:
-      self.pipe_r, self.pipe_w = os.pipe()
-      self.thread = threading.Thread(target=self.read_keyboard)
-      self.thread.daemon = True
+
+    self.refocus()
+
   def get_filename(self):
     while True:
       filename = self.prefix + str(self.num).zfill(4) + '.' + self.suffix
@@ -145,28 +131,7 @@ class SnapHelper:
       if not os.path.exists(filename):
         break
     return filename
-  def read_keyboard(self):
-    print('Press space to take a snap, r to refocus, or q to quit')
-    with setup_keyboard():
-      while True:
-        read_fd, _, _ = select.select([sys.stdin, self.pipe_r], [], [])
-        if self.pipe_r in read_fd:
-          break
-        c = sys.stdin.read()
-        if c == ' ':
-          self.snap_it = True
-        if c == 'r':
-          self.refocus()
-        if c == 'q':
-          while not self.loop.is_running():
-            time.sleep(0.01)
-          self.loop.quit()
-          break
-  def exit_keyboard_thread(self):
-    try:
-      os.close(self.pipe_w)
-    except:
-      pass
+  
   def check_af(self):
     try:
       self.sysfs.seek(0)
@@ -182,9 +147,7 @@ class SnapHelper:
     except:
       pass
   def save_frame(self):
-    # We always want to throw away the initial frames to let the
-    # camera stabilize. This seemed empirically to be the right number
-    # when running on desktop.
+    self.refocus()
     if self.scrapframes > 0:
       if self.scrapframes == SCRAP_FRAMES:
         self.refocus()
@@ -204,26 +167,6 @@ class SnapHelper:
     if self.thread:
       self.thread.start()
 def main(arguments):
-  parser = argparse.ArgumentParser('Take camera snapshots')
-  parser.add_argument(
-      '--prefix',
-      '-p',
-      dest='prefix',
-      help='Filename prefix',
-      default=FILENAME_PREFIX)
-  parser.add_argument(
-      '--oneshot',
-      dest='oneshot',
-      action='store_true',
-      help='One shot vs. interactive mode')
-  parser.add_argument(
-      '--format',
-      '-f',
-      dest='suffix',
-      default='jpg',
-      choices=('jpg', 'bmp', 'png'),
-      help='Format to save, default is JPEG')
-  args = parser.parse_args()
   try:
     with open(CAMERA_INIT_QUERY_SYSFS_NODE) as init_file:
       init_file.seek(0)
@@ -232,9 +175,8 @@ def main(arguments):
         raise Exception('Cannot find ov5645 CSI camera, ' +
                   'check that your camera is connected')
     with open(AF_SYSFS_NODE, 'w+') as sysfs:
-      snap = SnapHelper(sysfs, args.prefix, args.oneshot, args.suffix)
+      snap = PyCamera(sysfs)
       run_pipeline(snap)
-      snap.exit_keyboard_thread()
   except Exception as ex:
     print(ex)
 if __name__ == '__main__':
