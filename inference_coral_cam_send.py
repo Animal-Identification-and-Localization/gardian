@@ -17,6 +17,7 @@ def main():
     
     if object_list is not None:
         for obj in object_list:
+            print(obj)
             bounding_box = obj.bbox
             id = obj.id
             score = obj.score
