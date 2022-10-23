@@ -42,6 +42,9 @@ from pycoral.utils.dataset import read_label_file
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.utils.edgetpu import run_inference
 
+
+from boardcomms.coral_coms.coms_py.coral_pb_out import send_dx_dy
+
 def generate_svg(src_size, inference_box, objs, labels, text_lines):
     svg = SVG(src_size)
     src_w, src_h = src_size
@@ -109,6 +112,12 @@ def main():
           'Inference: {:.2f} ms'.format((end_time - start_time) * 1000),
           'FPS: {} fps'.format(round(next(fps_counter))),
       ]
+      if(len(objs)>0):
+        print(objs[0].id)
+        dx = int((objs[0].bbox.xmax-objs[0].bbox.xmin)/2)
+        dy = int((objs[0].bbox.ymax-objs[0].bbox.ymin)/2)
+        print(f'dx: {dx}, dy: {dy}')
+        send_dx_dy(dx, dy)
       print(' '.join(text_lines))
       return generate_svg(src_size, inference_box, objs, labels, text_lines)
 
