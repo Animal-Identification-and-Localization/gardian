@@ -41,8 +41,6 @@ from pycoral.adapters.detect import get_objects
 from pycoral.utils.dataset import read_label_file
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.utils.edgetpu import run_inference
-
-
 from boardcomms.coral_coms.coms_py.coral_pb_out import send_dx_dy
 
 def generate_svg(src_size, inference_box, objs, labels, text_lines):
@@ -72,8 +70,8 @@ def generate_svg(src_size, inference_box, objs, labels, text_lines):
 
 def main():
     default_model_dir = './models'
-    default_model = 'ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite'
-    default_labels = 'coco_labels.txt'
+    default_model = 'output_tflite_graph_edgetpu-500.tflite'
+    default_labels = 'labels_500.txt'
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help='.tflite model path',
                         default=os.path.join(default_model_dir,default_model))
@@ -81,13 +79,14 @@ def main():
                         default=os.path.join(default_model_dir, default_labels))
     parser.add_argument('--top_k', type=int, default=3,
                         help='number of categories with highest score to display')
-    parser.add_argument('--threshold', type=float, default=0.1,
+    parser.add_argument('--threshold', type=float, default=0.5,
                         help='classifier score threshold')
     parser.add_argument('--videosrc', help='Which video source to use. ',
                         default='/dev/video0')
-    parser.add_argument('--videofmt', help='Input video format.',
-                        default='raw',
-                        choices=['raw', 'h264', 'jpeg'])
+    parser.add_argument('--no_spi', help='do not send coordinates over SPI',
+                        action='store_true')
+    parser.add_argument('--display', help='open display window for inference',
+                        action='store_true')
     args = parser.parse_args()
 
     print('Loading {} with {} labels.'.format(args.model, args.labels))
@@ -99,33 +98,40 @@ def main():
 
     # Average fps over last 30 frames.
     fps_counter = avg_fps_counter(30)
-
+    no_spi = args.no_spi
     def user_callback(input_tensor, src_size, inference_box):
       nonlocal fps_counter
+      nonlocal no_spi
       start_time = time.monotonic()
       run_inference(interpreter, input_tensor)
       end_time = time.monotonic()
-
+      
       # For larger input image sizes, use the edgetpu.classification.engine for better performance
       objs = get_objects(interpreter, args.threshold)[:args.top_k]
-      text_lines = [
-          'Inference: {:.2f} ms'.format((end_time - start_time) * 1000),
-          'FPS: {} fps'.format(round(next(fps_counter))),
-      ]
+
+      print(objs)
       if(len(objs)>0):
         print(objs[0].id)
         dx = int((objs[0].bbox.xmax-objs[0].bbox.xmin)/2)
         dy = int((objs[0].bbox.ymax-objs[0].bbox.ymin)/2)
         print(f'dx: {dx}, dy: {dy}')
-        send_dx_dy(dx, dy)
+        if not no_spi: send_dx_dy(dx, dy)
+
+        print(inference_box)
+        print(src_size)
+      text_lines = [
+          'Inference: {:.2f} ms'.format((end_time - start_time) * 1000),
+          'FPS: {} fps'.format(round(next(fps_counter))),
+      ]
       print(' '.join(text_lines))
       return generate_svg(src_size, inference_box, objs, labels, text_lines)
-
+    headless = not args.display
+    print(headless)
     result = camera_pipeline.run_pipeline(user_callback,
                                     src_size=(640, 480),
                                     appsink_size=inference_size,
                                     videosrc=args.videosrc,
-                                    headless=True)
+                                    headless=headless)
 
 if __name__ == '__main__':
     main()
