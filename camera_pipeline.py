@@ -233,6 +233,6 @@ def run_pipeline(user_function,
         sink_element=SINK_ELEMENT, scale_caps=scale_caps)
 
     print('Gstreamer pipeline:\n', pipeline)
-
+    print(headless)
     pipeline = GstPipeline(pipeline, user_function, src_size, headless)
     pipeline.run()
