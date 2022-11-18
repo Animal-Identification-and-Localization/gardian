@@ -1,39 +1,9 @@
-# Copyright 2019 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-"""A demo which runs object detection on camera frames using GStreamer.
-
-Run default object detection:
-python3 detect.py
-
-Choose different camera and input encoding
-python3 detect.py --videosrc /dev/video1 --videofmt jpeg
-
-TEST_DATA=../all_models
-Run face detection model:
-python3 detect.py \
-  --model ${TEST_DATA}/mobilenet_ssd_v2_face_quant_postprocess_edgetpu.tflite
-
-Run coco model:
-python3 detect.py \
-  --model ${TEST_DATA}/mobilenet_ssd_v2_coco_quant_postprocess_edgetpu.tflite \
-  --labels ${TEST_DATA}/coco_labels.txt
-"""
 import argparse
 import camera_pipeline
 import os
 import time
+import atexit
 
 from common import avg_fps_counter, SVG
 from pycoral.adapters.common import input_size
@@ -42,6 +12,7 @@ from pycoral.utils.dataset import read_label_file
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.utils.edgetpu import run_inference
 from boardcomms.coral_coms.coms_py.coral_pb_out import send_dx_dy
+from periphery import I2C
 
 def generate_svg(src_size, inference_box, objs, labels, text_lines):
     svg = SVG(src_size)
@@ -68,6 +39,13 @@ def generate_svg(src_size, inference_box, objs, labels, text_lines):
         svg.add_rect(x, y, w, h, 'red', 2)
     return svg.finish()
 
+def get_bin(dx, dy, inference_size):
+  print(f'{dx}, {dy}')
+  bin_x = int(float(dx)/inference_size[0]*3)-1
+  bin_y = int(float(dy)/inference_size[1]*3)-1
+  return (bin_x, bin_y)
+
+i2c = None
 def main():
     default_model_dir = './models'
     default_model = 'output_tflite_graph_edgetpu-500.tflite'
@@ -99,6 +77,9 @@ def main():
     # Average fps over last 30 frames.
     fps_counter = avg_fps_counter(30)
     no_spi = args.no_spi
+
+    i2c = I2C("/dev/i2c-3")
+
     def user_callback(input_tensor, src_size, inference_box):
       nonlocal fps_counter
       nonlocal no_spi
@@ -112,10 +93,17 @@ def main():
       print(objs)
       if(len(objs)>0):
         print(objs[0].id)
-        dx = int((objs[0].bbox.xmax-objs[0].bbox.xmin)/2)
-        dy = int((objs[0].bbox.ymax-objs[0].bbox.ymin)/2)
+        dx = int((objs[0].bbox.xmax+objs[0].bbox.xmin)/2)
+        dy = int((objs[0].bbox.ymax+objs[0].bbox.ymin)/2)
+        dx, dy = get_bin(dx, dy, inference_size)
         print(f'dx: {dx}, dy: {dy}')
-        if not no_spi: send_dx_dy(dx, dy)
+        if not no_spi: 
+          try: 
+            print('sending coordinates to arduino')
+            send_dx_dy(dx*5, dy*5, i2c)
+          except:
+            print('i2c target busy')
+            time.sleep(.25)
 
         print(inference_box)
         print(src_size)
@@ -133,5 +121,10 @@ def main():
                                     videosrc=args.videosrc,
                                     headless=headless)
 
+def exit_handler():
+  print('Closing i2c')
+  i2c.close()
+
 if __name__ == '__main__':
-    main()
+  atexit.register(exit_handler)
+  main()
