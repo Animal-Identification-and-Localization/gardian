@@ -209,6 +209,14 @@ def run_pipeline(user_function,
         ! {scale_caps} ! videobox name=box autocrop=true ! {sink_caps} ! {sink_element}
         """
     elif coral:
+        # TO ROTATE THE IMAGE
+        # PIPELINE += """ ! decodebin ! queue ! v4l2convert ! {scale_caps} ! rotate angle=3.1415926536 !
+        #     glupload ! glcolorconvert ! video/x-raw(memory:GLMemory),format=RGBA !
+        #     tee name=t
+        #     t. ! queue ! glfilterbin filter=glbox name=glbox ! queue ! {sink_caps} ! {sink_element}
+        #     t. ! queue ! glsvgoverlay name=gloverlay sync=false ! glimagesink fullscreen=true
+        #             qos=false sync=false
+        # """
         PIPELINE += """ ! decodebin ! queue ! v4l2convert ! {scale_caps} !
             glupload ! glcolorconvert ! video/x-raw(memory:GLMemory),format=RGBA !
             tee name=t

@@ -41,8 +41,8 @@ def generate_svg(src_size, inference_box, objs, labels, text_lines):
 
 def get_bin(dx, dy, inference_size):
   print(f'{dx}, {dy}')
-  bin_x = int(float(dx)/inference_size[0]*3)-1
-  bin_y = int(float(dy)/inference_size[1]*3)-1
+  bin_x = int(float(dx)/inference_size[0]*40)-20
+  bin_y = int(float(dy)/inference_size[1]*40)-20
   return (bin_x, bin_y)
 
 i2c = None
@@ -79,10 +79,15 @@ def main():
     no_spi = args.no_spi
 
     i2c = I2C("/dev/i2c-3")
+    prev_dx = -1000
+    prev_dy = -1000
 
     def user_callback(input_tensor, src_size, inference_box):
       nonlocal fps_counter
       nonlocal no_spi
+      nonlocal prev_dx
+      nonlocal prev_dy
+      
       start_time = time.monotonic()
       run_inference(interpreter, input_tensor)
       end_time = time.monotonic()
@@ -97,13 +102,15 @@ def main():
         dy = int((objs[0].bbox.ymax+objs[0].bbox.ymin)/2)
         dx, dy = get_bin(dx, dy, inference_size)
         print(f'dx: {dx}, dy: {dy}')
-        if not no_spi: 
+        if not no_spi and (prev_dx != dx or prev_dy != dy): 
           try: 
             print('sending coordinates to arduino')
             send_dx_dy(dx*5, dy*5, i2c)
           except:
             print('i2c target busy')
             time.sleep(.25)
+          prev_dx = dx
+          prev_dy = dy
 
         print(inference_box)
         print(src_size)
