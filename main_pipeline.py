@@ -12,6 +12,7 @@ from pycoral.utils.dataset import read_label_file
 from pycoral.utils.edgetpu import make_interpreter
 from pycoral.utils.edgetpu import run_inference
 from boardcomms.coral_coms.coms_py.coral_pb_out import send_dx_dy
+from gi.repository import Gst
 from periphery import I2C
 
 def generate_svg(src_size, inference_box, objs, labels, text_lines):
@@ -41,8 +42,8 @@ def generate_svg(src_size, inference_box, objs, labels, text_lines):
 
 def get_bin(dx, dy, inference_size):
   print(f'{dx}, {dy}')
-  bin_x = int(float(dx)/inference_size[0]*40)-20
-  bin_y = int(float(dy)/inference_size[1]*40)-20
+  bin_x = int(float(dx)/inference_size[0]*5)-2
+  bin_y = int(float(dy)/inference_size[1]*5)-2
   return (bin_x, bin_y)
 
 i2c = None
@@ -81,13 +82,21 @@ def main():
     i2c = I2C("/dev/i2c-3")
     prev_dx = -1000
     prev_dy = -1000
+    headless = not args.display
 
     def user_callback(input_tensor, src_size, inference_box):
       nonlocal fps_counter
       nonlocal no_spi
       nonlocal prev_dx
       nonlocal prev_dy
-      
+      nonlocal headless
+#       (result, mapinfo) = input_tensor.map(Gst.MapFlags.READ)
+
+#       print(mapinfo.data)
+
+#       buf = sample.get_buffer()
+# caps = sample.get_caps()
+# H, W, C = caps.get_structure(0).get_value('height'), caps.get_structure(0).get_value('width'), 3
       start_time = time.monotonic()
       run_inference(interpreter, input_tensor)
       end_time = time.monotonic()
@@ -96,16 +105,28 @@ def main():
       objs = get_objects(interpreter, args.threshold)[:args.top_k]
 
       print(objs)
-      if(len(objs)>0):
-        print(objs[0].id)
-        dx = int((objs[0].bbox.xmax+objs[0].bbox.xmin)/2)
-        dy = int((objs[0].bbox.ymax+objs[0].bbox.ymin)/2)
+      target = None
+      for ob in objs:
+        if ob.id == 1:
+          target = ob
+      if target is not None:
+        print(target.id)
+        dx = int((target.bbox.xmax+target.bbox.xmin)/2)
+        dy = int((target.bbox.ymax+target.bbox.ymin)/2)
         dx, dy = get_bin(dx, dy, inference_size)
+
+        # if not headless:
+        #   dx = -dx
+
+        # if headless:
+        #   dy = -dy
+
         print(f'dx: {dx}, dy: {dy}')
-        if not no_spi and (prev_dx != dx or prev_dy != dy): 
+        # dy = 0
+        if not no_spi: 
           try: 
             print('sending coordinates to arduino')
-            send_dx_dy(dx*5, dy*5, i2c)
+            send_dx_dy(dx*abs(dx)*20, 0, i2c)
           except:
             print('i2c target busy')
             time.sleep(.25)
@@ -119,9 +140,13 @@ def main():
           'FPS: {} fps'.format(round(next(fps_counter))),
       ]
       print(' '.join(text_lines))
+
+      # quit()
+
       return generate_svg(src_size, inference_box, objs, labels, text_lines)
     headless = not args.display
     print(headless)
+    print(inference_size)
     result = camera_pipeline.run_pipeline(user_callback,
                                     src_size=(640, 480),
                                     appsink_size=inference_size,
