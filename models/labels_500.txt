@@ -1,0 +1,3 @@
+0 Cat
+1 Person
+2 Squirrel

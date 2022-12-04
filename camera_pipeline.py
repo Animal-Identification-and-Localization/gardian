@@ -1,16 +1,3 @@
-# Copyright 2019 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the 'License');
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an 'AS IS' BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 import sys
 import threading
@@ -20,6 +7,7 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstBase', '1.0')
 gi.require_version('Gtk', '3.0')
 from gi.repository import GLib, GObject, Gst, GstBase, Gtk
+import time 
 
 Gst.init(None)
 
@@ -124,7 +112,11 @@ class GstPipeline:
 
             # Passing Gst.Buffer as input tensor avoids 2 copies of it.
             gstbuffer = gstsample.get_buffer()
-            svg = self.user_function(gstbuffer, self.src_size, self.get_box())
+            # caps = gstsample.get_caps()
+            # H, W, C = caps.get_structure(0).get_value('height'), caps.get_structure(0).get_value('width'), 3
+
+            # print(f'{H},{W},{C}')
+            (svg, human) = self.user_function(gstbuffer, self.src_size, self.get_box())
             if svg:
                 if self.overlay:
                     self.overlay.set_property('data', svg)
@@ -132,6 +124,9 @@ class GstPipeline:
                     self.gloverlay.emit('set-svg', svg, gstbuffer.pts)
                 if self.overlaysink:
                     self.overlaysink.set_property('svg', svg)
+            if human:
+                print('sleeping for human, 10s')
+                time.sleep(10)
 
     def setup_window(self):
         # Only set up our own window if we have Coral overlay sink in the pipeline.
@@ -209,9 +204,17 @@ def run_pipeline(user_function,
         ! {scale_caps} ! videobox name=box autocrop=true ! {sink_caps} ! {sink_element}
         """
     elif coral:
-        PIPELINE += """ ! decodebin ! queue ! v4l2convert ! {scale_caps} !
+        # TO ROTATE THE IMAGE
+        # PIPELINE += """ ! decodebin ! queue ! v4l2convert ! {scale_caps} ! rotate angle=3.1415926536 !
+        #     glupload ! glcolorconvert ! video/x-raw(memory:GLMemory),format=RGBA !
+        #     tee name=t
+        #     t. ! queue ! glfilterbin filter=glbox name=glbox ! queue ! {sink_caps} ! {sink_element}
+        #     t. ! queue ! glsvgoverlay name=gloverlay sync=false ! glimagesink fullscreen=true
+        #             qos=false sync=false
+        # """
+        PIPELINE += """ ! decodebin ! queue ! v4l2convert ! {scale_caps} ! 
             glupload ! glcolorconvert ! video/x-raw(memory:GLMemory),format=RGBA !
-            tee name=t
+            tee name=t 
             t. ! queue ! glfilterbin filter=glbox name=glbox ! queue ! {sink_caps} ! {sink_element}
             t. ! queue ! glsvgoverlay name=gloverlay sync=false ! glimagesink fullscreen=true
                     qos=false sync=false
