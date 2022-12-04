@@ -42,7 +42,7 @@ def generate_svg(src_size, inference_box, objs, labels, text_lines):
         svg.add_text(x, y - 5, label, 20)
         if obj.id == 2: svg.add_rect(x, y, w, h, 'red', 2)
         else: svg.add_rect(x, y, w, h, 'green', 2)
-        
+
     for y, line in enumerate(text_lines, start=1):
         svg.add_text(10, y * 20, line, 20)
     return svg.finish()
