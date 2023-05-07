@@ -62,7 +62,7 @@ i2c = None
 def main():
     global i2c
     default_model_dir = './models'
-    default_model = 'output_tflite_graph_edgetpu_dec4rt.tflite'
+    default_model = 'output_tflite_graph_edgetpu_15.tflite'
     default_labels = 'labels.txt'
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help='.tflite model path',
@@ -100,7 +100,7 @@ def main():
     prev_dy = -1000
     headless = not args.display
     no_obj_count = 0
-    bbox_max_size = int(inference_size[0]*inference_size[1]*.6)
+    bbox_max_size = int(inference_size[0]*inference_size[1]*.4)
 
     def user_callback(input_tensor, src_size, inference_box):
       nonlocal no_obj_count
@@ -140,12 +140,10 @@ def main():
           area_target = area
 
         # if a human is found, sleep for 5s
-        elif objs[idx].id == 1:
-          if objs[idx].score>.7:
-            svg = generate_svg(src_size, inference_box, [objs[idx]], labels, text_lines)
-            return (svg, True)
-          else:
-            time.sleep(.5)
+        elif objs[idx].id == 1 and objs[idx].score>.65:
+          if not no_spi: send_dx_dy(0,0,i2c)
+          svg = generate_svg(src_size, inference_box, [objs[idx]], labels, text_lines)
+          return (svg, True)
 
       # print(objs)
 
@@ -156,11 +154,11 @@ def main():
         dx = int((target.bbox.xmax+target.bbox.xmin)/2)
         dy = int((target.bbox.ymax+target.bbox.ymin)/2)
 
-        dx = int(int((dx - inference_size[0]/2)/5)*4)*int(abs(dx)>=20)
+        dx = int(int((dx - inference_size[0]/2)/5)*4)*int(abs(dx)>=25)
         if dx<0: dx = max(dx, -200)
         if dx>0: dx = min(dx, 200)
 
-        dy = int(int((dy - inference_size[1]/2))/5)*int(abs(dy)>=20)
+        dy = int(int((dy - inference_size[1]/2))/5)*int(abs(dy)>=25)
 
         if not no_spi: 
           try: 
@@ -168,7 +166,11 @@ def main():
             thres = 10
             laser_on = prev_dx<thres and dx<thres and dy<thres and prev_dy<thres and use_laser
             # print(laser_on)
-            send_dx_dy(dx, int(dy), i2c, laser_on)
+            # start_time = time.monotonic()
+            send_dx_dy(-1*dx, -1*int(dy), i2c, laser_on)
+            # send_dx_dy(0, 0, i2c, laser_on)
+            # end_time = time.monotonic()
+            # print(f'{(end_time-start_time)*1000}')
           except:
             print('i2c target busy')
 
